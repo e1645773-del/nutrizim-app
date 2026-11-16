@@ -4,6 +4,9 @@ import {
   activateSubscription,
   auth,
   ensureUserProfile,
+  getOrCreateLocalProfile,
+  isFirebaseConfigured,
+  isLocalUid,
   signInWithGoogle,
   signOutUser,
   subscribeToAppStats,
@@ -55,11 +58,12 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryS
 export default function App() {
   const [isDark, setIsDark] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [isLocalSession, setIsLocalSession] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<AppStats>({ totalRegisteredUsers: 0, alphaCap: 10 });
   const [viewMode, setViewMode] = useState<'landing' | 'app'>('landing');
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
@@ -68,6 +72,12 @@ export default function App() {
   useEffect(() => {
     testFirestoreConnection();
     const unsubStats = subscribeToAppStats(setStats);
+
+    if (!auth || !isFirebaseConfigured) {
+      return () => {
+        unsubStats();
+      };
+    }
 
     let unsubProfile: (() => void) | null = null;
     const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
@@ -78,10 +88,11 @@ export default function App() {
       }
 
       if (!nextUser) {
-        setProfile(null);
+        setProfile((prev) => (prev && isLocalUid(prev.uid) ? prev : null));
         return;
       }
 
+      setIsLocalSession(false);
       try {
         const ensured = await ensureUserProfile(nextUser);
         setProfile(ensured);
@@ -97,7 +108,13 @@ export default function App() {
           if (liveProfile) setProfile(liveProfile);
         });
       } catch (err) {
-        setAuthError(err instanceof Error ? err.message : 'Unable to initialize profile.');
+        console.warn('Firestore profile error, switching to local browser storage:', err);
+        const localProfile = getOrCreateLocalProfile();
+        setProfile(localProfile);
+        setIsLocalSession(true);
+        setAuthNotice(
+          'Cloud database unavailable — running in Local Browser Storage mode so your meals still save.'
+        );
       }
     });
 
@@ -108,20 +125,53 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isLocalSession) return;
+    return subscribeToUserProfile(getOrCreateLocalProfile().uid, (liveLocal) => {
+      if (liveLocal) setProfile(liveLocal);
+    });
+  }, [isLocalSession]);
+
+  const enterLocalMode = (reason?: string) => {
+    const localProfile = getOrCreateLocalProfile();
+    setProfile(localProfile);
+    setIsLocalSession(true);
+    setViewMode('app');
+    if (reason) {
+      setAuthNotice(reason);
+    } else {
+      setAuthNotice(null);
+    }
+  };
+
   const handleSignInAndOpen = async () => {
-    if (user) {
+    if ((user || isLocalSession) && profile) {
       setViewMode('app');
       return;
     }
+
+    if (!isFirebaseConfigured || !auth) {
+      enterLocalMode(
+        'Firebase keys are not configured — running in Local Browser Storage mode.'
+      );
+      return;
+    }
+
     setIsSigningIn(true);
-    setAuthError(null);
+    setAuthNotice(null);
     try {
       await signInWithGoogle();
       setViewMode('app');
     } catch (err) {
-      setAuthError(
-        err instanceof Error ? err.message : 'Google Sign-In was cancelled or blocked.'
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      const isUserCancelled = msg.includes('popup-closed-by-user') || msg.includes('cancelled-popup-request');
+      if (isUserCancelled) {
+        setAuthNotice('Google Sign-In closed — sign in again or continue with Local Browser Storage.');
+      } else {
+        enterLocalMode(
+          'Firebase Auth unavailable on this host — switched automatically to Local Browser Storage.'
+        );
+      }
     } finally {
       setIsSigningIn(false);
     }
@@ -129,29 +179,43 @@ export default function App() {
 
   const handleSignOut = async () => {
     await signOutUser();
+    setIsLocalSession(false);
+    setProfile(null);
+    setAuthNotice(null);
     setViewMode('landing');
   };
+
+  const isActiveUser = Boolean((user || isLocalSession) && profile);
 
   return (
     <AppErrorBoundary>
       <div className="min-h-screen bg-[#FAF4EA] dark:bg-[#0B110E] text-[#112018] dark:text-[#EDF4EF] transition-colors">
         <Navbar
-          user={user}
+          isSignedIn={isActiveUser}
           viewMode={viewMode}
           onNavigateView={setViewMode}
           onSignIn={handleSignInAndOpen}
           isSigningIn={isSigningIn}
         />
 
-        {authError && (
+        {authNotice && (
           <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-4">
-            <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-400">
-              {authError}
+            <div className="rounded-xl border border-[#D99B26]/40 bg-[#F2DFAA]/60 dark:bg-[#2F2512] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-[#112018] dark:text-[#F2DFAA]">
+              <span>{authNotice}</span>
+              {!isActiveUser && (
+                <button
+                  type="button"
+                  onClick={() => enterLocalMode()}
+                  className="rounded-full bg-[#135D3B] px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#E5B84B] hover:bg-[#0E482D]"
+                >
+                  Continue with Local Storage
+                </button>
+              )}
             </div>
           </div>
         )}
 
-        {viewMode === 'app' && user && profile ? (
+        {viewMode === 'app' && profile ? (
           <Dashboard
             profile={profile}
             isDark={isDark}
@@ -165,7 +229,7 @@ export default function App() {
             onToggleTheme={() => setIsDark((d) => !d)}
             onStartTracking={handleSignInAndOpen}
             isSigningIn={isSigningIn}
-            isAuthenticated={Boolean(user && profile)}
+            isAuthenticated={isActiveUser}
           />
         )}
       </div>

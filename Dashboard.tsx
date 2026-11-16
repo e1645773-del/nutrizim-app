@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { scaleNutrition } from '../data/zimbabweFoodDb';
 import {
+  isLocalUid,
   saveDailyCheckIn,
   subscribeToCoachMessages,
   subscribeToDailyCheckIns,
@@ -292,7 +293,9 @@ export function Dashboard({ profile, isDark, onToggleTheme, onSignOut }: Dashboa
             ·
           </span>
           <span className="font-semibold text-[#135D3B] dark:text-[#34D399]">
-            {profile.tier === 'alpha_free'
+            {isLocalUid(profile.uid)
+              ? 'Local Browser Storage'
+              : profile.tier === 'alpha_free'
               ? 'Free Early-Bird Alpha'
               : `NutriZim Pro (${profile.paymentMethod.toUpperCase()})`}
           </span>

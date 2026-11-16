@@ -18,6 +18,7 @@ import {
   type SpokenLanguageKey,
   useSpeechRecognition,
 } from '../lib/speechRecognition';
+import { localParseMealDescription } from '../lib/localMealFallback';
 import { CameraScan, type CameraScanResult } from './CameraScan';
 
 export interface DetectedFoodItem {
@@ -128,8 +129,12 @@ export function ScannerPanel({ uid, dateKey, onLogged }: ScannerPanelProps) {
       if (!resp.ok) throw new Error(data.error || 'Analysis failed.');
       setSummary(data.summary);
       setItems(data.items || []);
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to analyze meal.');
+    } catch {
+      const parsed = localParseMealDescription(description || '');
+      setSummary(
+        `Matched ${parsed.length} item(s) locally against the NutriZim 100g/100ml database.`
+      );
+      setItems(parsed);
     } finally {
       setAnalyzing(false);
     }

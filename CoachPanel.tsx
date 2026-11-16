@@ -14,6 +14,7 @@ import {
   type SpokenLanguageKey,
   useSpeechRecognition,
 } from '../lib/speechRecognition';
+import { localParseMealDescription } from '../lib/localMealFallback';
 import type { DetectedFoodItem } from './ScannerPanel';
 
 interface CoachPanelProps {
@@ -139,8 +140,16 @@ export function CoachPanel({
           targetAdjustment: data.targetAdjustment || null,
         });
       }
-    } catch (err) {
-      setActionStatus(err instanceof Error ? err.message : 'Unable to reach AI coach.');
+    } catch {
+      const localItems = localParseMealDescription(content);
+      const reply =
+        localItems.length > 0
+          ? `Offline Local Coach: Matched ${localItems.length} dish(es) against the 100g/100ml database. Confirm below to save to localStorage.`
+          : `Offline Local Coach: Today you are at ${totals.kcal}/${profile.targetKcal} kcal and ${totals.protein}/${profile.targetProtein}g protein. Name a Zimbabwean dish (e.g. sadza, covo, beef stew, dovi) to log it.`;
+      await saveCoachMessage(profile.uid, 'assistant', reply);
+      if (localItems.length > 0) {
+        setPendingAction({ items: localItems, targetAdjustment: null });
+      }
     } finally {
       setSending(false);
     }

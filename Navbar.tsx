@@ -1,7 +1,5 @@
-import type { User } from 'firebase/auth';
-
 interface NavbarProps {
-  user: User | null;
+  isSignedIn: boolean;
   viewMode: 'landing' | 'app';
   onNavigateView: (mode: 'landing' | 'app') => void;
   onSignIn: () => void;
@@ -9,7 +7,7 @@ interface NavbarProps {
 }
 
 export function Navbar({
-  user,
+  isSignedIn,
   viewMode,
   onNavigateView,
   onSignIn,
@@ -61,7 +59,7 @@ export function Navbar({
 
         {/* Zone 3: Single Primary Action */}
         <div className="flex items-center shrink-0">
-          {user ? (
+          {isSignedIn ? (
             <button
               type="button"
               onClick={() => onNavigateView(viewMode === 'landing' ? 'app' : 'landing')}

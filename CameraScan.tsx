@@ -16,6 +16,7 @@ import {
   type SpokenLanguageKey,
   useSpeechRecognition,
 } from '../lib/speechRecognition';
+import { localParseMealDescription } from '../lib/localMealFallback';
 
 export interface CameraScannedFoodItem {
   foodId: number;
@@ -214,8 +215,19 @@ export function CameraScan({
         engineUsed: result.engineUsed,
       });
       onScanComplete(result);
-    } catch (err) {
-      onError?.(err instanceof Error ? err.message : 'Unable to scan captured plate.');
+    } catch {
+      const items = localParseMealDescription(hintToSend || '', plateSize);
+      const totalEstimatedWeightGrams = items.reduce((s, it) => s + it.portionAmount, 0);
+      setLastMeta({
+        totalGrams: totalEstimatedWeightGrams,
+        engineUsed: 'local-browser-db',
+      });
+      onScanComplete({
+        summary: `Matched ${items.length} Southern African dish(es) locally against the 100g/100ml database.`,
+        items,
+        totalEstimatedWeightGrams,
+        engineUsed: 'local-browser-db',
+      });
     } finally {
       setScanning(false);
     }

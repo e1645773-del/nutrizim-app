@@ -1,5 +1,12 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type User } from 'firebase/auth';
+import { initializeApp, type FirebaseApp } from 'firebase/app';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  type Auth,
+  type User,
+} from 'firebase/auth';
 import {
   getFirestore,
   doc,
@@ -18,14 +25,111 @@ import {
   setDoc,
   serverTimestamp,
   writeBatch,
+  type Firestore,
   type Unsubscribe,
   type Timestamp,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import {
+  LOCAL_GUEST_UID,
+  activateLocalSubscription,
+  addLocalFoodLogsBatch,
+  deleteLocalFoodLog,
+  isLocalUid,
+  saveLocalCoachMessage,
+  saveLocalDailyCheckIn,
+  saveLocalHydrationLog,
+  saveLocalMealReminderSettings,
+  saveLocalWeightLog,
+  subscribeLocalAppStats,
+  subscribeLocalCoachMessages,
+  subscribeLocalDailyCheckIns,
+  subscribeLocalFoodLogs,
+  subscribeLocalHydrationLog,
+  subscribeLocalMealReminderSettings,
+  subscribeLocalUserProfile,
+  subscribeLocalWeightLogs,
+  syncLocalUserStreakSummary,
+  updateLocalFoodLogPortion,
+  updateLocalUserTargets,
+} from './localStorageStore';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+export { LOCAL_GUEST_UID, getOrCreateLocalProfile, isLocalUid } from './localStorageStore';
+
+interface RawFirebaseConfig {
+  projectId?: string;
+  appId?: string;
+  apiKey?: string;
+  authDomain?: string;
+  firestoreDatabaseId?: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+}
+
+const configModules = import.meta.glob('../../firebase-applet-config.json', {
+  eager: true,
+}) as Record<string, { default?: RawFirebaseConfig } | RawFirebaseConfig>;
+
+const rawJsonConfig = Object.values(configModules)[0];
+const fileConfig: RawFirebaseConfig =
+  rawJsonConfig && 'default' in rawJsonConfig && rawJsonConfig.default
+    ? rawJsonConfig.default
+    : (rawJsonConfig as RawFirebaseConfig) || {};
+
+const resolvedConfig: RawFirebaseConfig = {
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string | undefined) || fileConfig.apiKey,
+  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined) || fileConfig.authDomain,
+  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined) || fileConfig.projectId,
+  storageBucket:
+    (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string | undefined) || fileConfig.storageBucket,
+  messagingSenderId:
+    (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string | undefined) ||
+    fileConfig.messagingSenderId,
+  appId: (import.meta.env.VITE_FIREBASE_APP_ID as string | undefined) || fileConfig.appId,
+  firestoreDatabaseId:
+    (import.meta.env.VITE_FIREBASE_DATABASE_ID as string | undefined) ||
+    fileConfig.firestoreDatabaseId,
+};
+
+function hasValidConfigValue(val?: string): boolean {
+  if (!val) return false;
+  const trimmed = val.trim();
+  return (
+    trimmed.length > 0 &&
+    trimmed !== 'remixed-project-id' &&
+    !trimmed.startsWith('MY_')
+  );
+}
+
+export const isFirebaseConfigured = Boolean(
+  hasValidConfigValue(resolvedConfig.apiKey) &&
+    hasValidConfigValue(resolvedConfig.projectId) &&
+    hasValidConfigValue(resolvedConfig.appId)
+);
+
+let app: FirebaseApp | null = null;
+let firestoreInstance: Firestore | null = null;
+let authInstance: Auth | null = null;
+
+if (isFirebaseConfigured) {
+  try {
+    app = initializeApp(resolvedConfig as Record<string, string>);
+    firestoreInstance = resolvedConfig.firestoreDatabaseId
+      ? getFirestore(app, resolvedConfig.firestoreDatabaseId)
+      : getFirestore(app);
+    authInstance = getAuth(app);
+  } catch (err) {
+    console.warn(
+      'Firebase initialization skipped; falling back to localStorage persistence:',
+      err instanceof Error ? err.message : err
+    );
+    app = null;
+    firestoreInstance = null;
+    authInstance = null;
+  }
+}
+
+export const db = firestoreInstance;
+export const auth = authInstance;
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -63,13 +167,13 @@ export function handleFirestoreError(
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
+      tenantId: auth?.currentUser?.tenantId,
       providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
+        auth?.currentUser?.providerData?.map((provider) => ({
           providerId: provider.providerId,
           email: provider.email,
         })) || [],
@@ -82,11 +186,12 @@ export function handleFirestoreError(
 }
 
 export async function testFirestoreConnection(): Promise<void> {
+  if (!db) return;
   try {
     await getDocFromServer(doc(db, 'app_stats', 'global'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+      console.warn('Firestore offline — local browser storage remains active.');
     }
   }
 }
@@ -187,6 +292,9 @@ export interface MealReminderSettings {
 }
 
 export function subscribeToAppStats(callback: (stats: AppStats) => void): Unsubscribe {
+  if (!db) {
+    return subscribeLocalAppStats(callback);
+  }
   const ref = doc(db, 'app_stats', 'global');
   return onSnapshot(
     ref,
@@ -209,15 +317,22 @@ export function subscribeToAppStats(callback: (stats: AppStats) => void): Unsubs
 }
 
 export async function signInWithGoogle(): Promise<User> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not configured.');
+  }
   const cred = await signInWithPopup(auth, googleProvider);
   return cred.user;
 }
 
 export async function signOutUser(): Promise<void> {
+  if (!auth) return;
   await signOut(auth);
 }
 
 export async function ensureUserProfile(user: User): Promise<UserProfile> {
+  if (!db || isLocalUid(user.uid)) {
+    throw new Error('Firestore database unavailable.');
+  }
   const userRef = doc(db, 'users', user.uid);
   const statsRef = doc(db, 'app_stats', 'global');
 
@@ -274,6 +389,9 @@ export function subscribeToUserProfile(
   uid: string,
   callback: (profile: UserProfile | null) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalUserProfile(callback);
+  }
   const path = `users/${uid}`;
   return onSnapshot(
     doc(db, 'users', uid),
@@ -289,6 +407,10 @@ export async function activateSubscription(
   method: 'stripe' | 'ecocash',
   ecocashRef?: string
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    activateLocalSubscription(method, ecocashRef);
+    return;
+  }
   const path = `users/${uid}`;
   try {
     const payload: Record<string, unknown> = {
@@ -315,6 +437,10 @@ export async function updateUserTargets(
     targetFibre: number;
   }
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    updateLocalUserTargets(targets);
+    return;
+  }
   const path = `users/${uid}`;
   try {
     await updateDoc(doc(db, 'users', uid), {
@@ -334,6 +460,9 @@ export function subscribeToFoodLogs(
   uid: string,
   callback: (logs: FoodLogEntry[]) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalFoodLogs(callback);
+  }
   const path = `users/${uid}/food_logs`;
   const q = query(
     collection(db, 'users', uid, 'food_logs'),
@@ -358,6 +487,10 @@ export async function addFoodLogsBatch(
   uid: string,
   entries: Array<Omit<FoodLogEntry, 'id' | 'userId' | 'createdAt'>>
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    addLocalFoodLogsBatch(entries);
+    return;
+  }
   const path = `users/${uid}/food_logs`;
   try {
     const batch = writeBatch(db);
@@ -393,6 +526,10 @@ export async function updateFoodLogPortion(
   portionAmount: number,
   mealGroup: FoodLogEntry['mealGroup']
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    updateLocalFoodLogPortion(logId, portionAmount, mealGroup);
+    return;
+  }
   const path = `users/${uid}/food_logs/${logId}`;
   try {
     await updateDoc(doc(db, 'users', uid, 'food_logs', logId), {
@@ -405,6 +542,10 @@ export async function updateFoodLogPortion(
 }
 
 export async function deleteFoodLog(uid: string, logId: string): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    deleteLocalFoodLog(logId);
+    return;
+  }
   const path = `users/${uid}/food_logs/${logId}`;
   try {
     await deleteDoc(doc(db, 'users', uid, 'food_logs', logId));
@@ -417,6 +558,9 @@ export function subscribeToWeightLogs(
   uid: string,
   callback: (logs: WeightLogEntry[]) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalWeightLogs(callback);
+  }
   const path = `users/${uid}/weight_logs`;
   const q = query(
     collection(db, 'users', uid, 'weight_logs'),
@@ -444,6 +588,10 @@ export async function saveWeightLog(
   note: string,
   existingId?: string
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    saveLocalWeightLog(dateKey, weightKg, note, existingId);
+    return;
+  }
   const docId = existingId || dateKey;
   const path = `users/${uid}/weight_logs/${docId}`;
   try {
@@ -473,6 +621,9 @@ export function subscribeToCoachMessages(
   uid: string,
   callback: (msgs: CoachMessageEntry[]) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalCoachMessages(callback);
+  }
   const path = `users/${uid}/coach_messages`;
   const q = query(
     collection(db, 'users', uid, 'coach_messages'),
@@ -498,6 +649,10 @@ export async function saveCoachMessage(
   role: 'user' | 'assistant',
   content: string
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    saveLocalCoachMessage(role, content);
+    return;
+  }
   const path = `users/${uid}/coach_messages`;
   try {
     await addDoc(collection(db, 'users', uid, 'coach_messages'), {
@@ -515,6 +670,9 @@ export function subscribeToDailyCheckIns(
   uid: string,
   callback: (checkIns: DailyCheckInEntry[]) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalDailyCheckIns(callback);
+  }
   const path = `users/${uid}/daily_checkins`;
   const q = query(
     collection(db, 'users', uid, 'daily_checkins'),
@@ -540,6 +698,10 @@ export async function saveDailyCheckIn(
   dateKey: string,
   source: 'meal' | 'manual' = 'manual'
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    saveLocalDailyCheckIn(dateKey, source);
+    return;
+  }
   const path = `users/${uid}/daily_checkins/${dateKey}`;
   try {
     const ref = doc(db, 'users', uid, 'daily_checkins', dateKey);
@@ -562,6 +724,10 @@ export async function syncUserStreakSummary(
   longestStreak: number,
   lastCheckInDate: string
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    syncLocalUserStreakSummary(currentStreak, longestStreak, lastCheckInDate);
+    return;
+  }
   const path = `users/${uid}`;
   try {
     await updateDoc(doc(db, 'users', uid), {
@@ -580,6 +746,9 @@ export function subscribeToHydrationLog(
   dateKey: string,
   callback: (entry: HydrationLogEntry | null) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalHydrationLog(dateKey, callback);
+  }
   const path = `users/${uid}/hydration_logs/${dateKey}`;
   return onSnapshot(
     doc(db, 'users', uid, 'hydration_logs', dateKey),
@@ -604,6 +773,10 @@ export async function saveHydrationLog(
   goalGlasses: number,
   glassMl = 250
 ): Promise<void> {
+  if (!db || isLocalUid(uid)) {
+    saveLocalHydrationLog(dateKey, glasses, goalGlasses, glassMl);
+    return;
+  }
   const path = `users/${uid}/hydration_logs/${dateKey}`;
   const cleanGlasses = Math.max(0, Math.min(40, Math.round(glasses)));
   const cleanGoal = Math.max(1, Math.min(30, Math.round(goalGlasses)));
@@ -646,6 +819,9 @@ export function subscribeToMealReminderSettings(
   uid: string,
   callback: (settings: MealReminderSettings | null) => void
 ): Unsubscribe {
+  if (!db || isLocalUid(uid)) {
+    return subscribeLocalMealReminderSettings(callback);
+  }
   const path = `users/${uid}/reminder_settings/meal_reminders`;
   return onSnapshot(
     doc(db, 'users', uid, 'reminder_settings', 'meal_reminders'),
@@ -675,7 +851,6 @@ export async function saveMealReminderSettings(
     snackEnabled: boolean;
   }
 ): Promise<void> {
-  const path = `users/${uid}/reminder_settings/meal_reminders`;
   const payload = {
     enabled: Boolean(settings.enabled),
     smartSkipLogged: Boolean(settings.smartSkipLogged),
@@ -685,6 +860,13 @@ export async function saveMealReminderSettings(
     snackTime: sanitizeTimeHHMM(settings.snackTime, '16:00'),
     snackEnabled: Boolean(settings.snackEnabled),
   };
+
+  if (!db || isLocalUid(uid)) {
+    saveLocalMealReminderSettings(payload);
+    return;
+  }
+
+  const path = `users/${uid}/reminder_settings/meal_reminders`;
 
   try {
     const ref = doc(db, 'users', uid, 'reminder_settings', 'meal_reminders');
