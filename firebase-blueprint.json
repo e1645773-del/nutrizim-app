@@ -1,0 +1,428 @@
+{
+  "entities": {
+    "AppStats": {
+      "title": "AppStats",
+      "description": "Global application counters including total registered users and alpha slot cap.",
+      "type": "object",
+      "properties": {
+        "totalRegisteredUsers": {
+          "type": "number",
+          "description": "Total count of registered NutriZim user profiles."
+        },
+        "alphaCap": {
+          "type": "number",
+          "description": "Number of free early-bird alpha slots (10)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last counter update."
+        }
+      },
+      "required": ["totalRegisteredUsers", "alphaCap", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "NutriZim user account, subscription tier, and standardized macro targets.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "userNumber": {
+          "type": "number",
+          "description": "1-based registration rank determining alpha eligibility."
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["alpha_free", "pending_payment", "premium_paid"]
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["alpha", "stripe", "ecocash", "none"]
+        },
+        "ecocashRef": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "targetKcal": {
+          "type": "number"
+        },
+        "targetProtein": {
+          "type": "number"
+        },
+        "targetCarbs": {
+          "type": "number"
+        },
+        "targetFat": {
+          "type": "number"
+        },
+        "targetFibre": {
+          "type": "number"
+        },
+        "currentStreak": {
+          "type": "number",
+          "description": "Current consecutive days with logged meals or daily check-ins."
+        },
+        "longestStreak": {
+          "type": "number",
+          "description": "All-time highest consecutive day streak."
+        },
+        "lastCheckInDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "displayName",
+        "userNumber",
+        "tier",
+        "paymentMethod",
+        "targetKcal",
+        "targetProtein",
+        "targetCarbs",
+        "targetFat",
+        "targetFibre",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FoodLog": {
+      "title": "FoodLog",
+      "description": "Individual standardized 100g/100ml food entry scaled by user portion.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dateKey": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "mealGroup": {
+          "type": "string",
+          "enum": ["Breakfast", "Lunch", "Dinner", "Snack"]
+        },
+        "foodId": {
+          "type": "number"
+        },
+        "foodName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "unit": {
+          "type": "string",
+          "enum": ["g", "ml"]
+        },
+        "portionAmount": {
+          "type": "number"
+        },
+        "kcalPer100": {
+          "type": "number"
+        },
+        "proteinPer100": {
+          "type": "number"
+        },
+        "carbsPer100": {
+          "type": "number"
+        },
+        "fatPer100": {
+          "type": "number"
+        },
+        "fibrePer100": {
+          "type": "number"
+        },
+        "vitamins": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "source": {
+          "type": "string",
+          "enum": ["camera", "chat", "barcode", "manual", "voice"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "dateKey",
+        "mealGroup",
+        "foodId",
+        "foodName",
+        "unit",
+        "portionAmount",
+        "kcalPer100",
+        "proteinPer100",
+        "carbsPer100",
+        "fatPer100",
+        "fibrePer100",
+        "vitamins",
+        "source",
+        "createdAt"
+      ]
+    },
+    "WeightLog": {
+      "title": "WeightLog",
+      "description": "Daily body-weight entry correlated against calorie intake.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dateKey": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "weightKg": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "dateKey", "weightKg", "note", "createdAt", "updatedAt"]
+    },
+    "DailyCheckIn": {
+      "title": "DailyCheckIn",
+      "description": "Daily check-in marker recording meal logging or manual consistency check-in.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dateKey": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["meal", "manual"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "dateKey", "source", "createdAt"]
+    },
+    "HydrationLog": {
+      "title": "HydrationLog",
+      "description": "Daily water intake glass counter and hydration goal progress per dateKey.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dateKey": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "glasses": {
+          "type": "number",
+          "description": "Number of 250ml glasses consumed on dateKey."
+        },
+        "goalGlasses": {
+          "type": "number",
+          "description": "Daily target number of 250ml glasses."
+        },
+        "glassMl": {
+          "type": "number",
+          "description": "Volume per glass in milliliters (default 250)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "dateKey", "glasses", "goalGlasses", "glassMl", "createdAt", "updatedAt"]
+    },
+    "CoachMessage": {
+      "title": "CoachMessage",
+      "description": "Persisted conversational AI nutrition coaching message.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "assistant"]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "role", "content", "createdAt"]
+    },
+    "MealReminderSettings": {
+      "title": "MealReminderSettings",
+      "description": "User preferences and designated local meal times for smart browser push notification reminders.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "smartSkipLogged": {
+          "type": "boolean"
+        },
+        "breakfastTime": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 5,
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "lunchTime": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 5,
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "dinnerTime": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 5,
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "snackTime": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 5,
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "snackEnabled": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "enabled",
+        "smartSkipLogged",
+        "breakfastTime",
+        "lunchTime",
+        "dinnerTime",
+        "snackTime",
+        "snackEnabled",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/app_stats/{statId}": {
+      "schema": { "$ref": "#/entities/AppStats" },
+      "description": "Singleton global user registration counter document (app_stats/global)."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-isolated user account, tier status, and nutrition targets."
+    },
+    "/users/{userId}/food_logs/{logId}": {
+      "schema": { "$ref": "#/entities/FoodLog" },
+      "description": "User's standardized 100g/100ml food logs."
+    },
+    "/users/{userId}/weight_logs/{weightId}": {
+      "schema": { "$ref": "#/entities/WeightLog" },
+      "description": "User's daily body-weight measurements."
+    },
+    "/users/{userId}/daily_checkins/{checkinId}": {
+      "schema": { "$ref": "#/entities/DailyCheckIn" },
+      "description": "User's daily check-in records for meal streak tracking."
+    },
+    "/users/{userId}/hydration_logs/{hydrationId}": {
+      "schema": { "$ref": "#/entities/HydrationLog" },
+      "description": "User's daily water intake glasses and hydration goal progress."
+    },
+    "/users/{userId}/coach_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/CoachMessage" },
+      "description": "User's AI nutrition coach conversation history."
+    },
+    "/users/{userId}/reminder_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/MealReminderSettings" },
+      "description": "User's smart meal push notification schedules and preferences."
+    }
+  }
+}

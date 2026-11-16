@@ -1,0 +1,6 @@
+{
+  "name": "NutriZim",
+  "description": "AI-powered camera food scanning meets objective, standardized 100g/100ml macro tracking for Zimbabwean and Southern African cuisine.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

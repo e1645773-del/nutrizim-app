@@ -1,0 +1,390 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'e1645773@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidAppStats(data) {
+      return data.keys().hasAll(['totalRegisteredUsers', 'alphaCap', 'updatedAt'])
+        && data.keys().hasOnly(['totalRegisteredUsers', 'alphaCap', 'updatedAt'])
+        && data.totalRegisteredUsers is int
+        && data.totalRegisteredUsers >= 0
+        && data.totalRegisteredUsers <= 10000000
+        && data.alphaCap is int
+        && data.alphaCap == 10
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'email', 'displayName', 'userNumber', 'tier',
+          'paymentMethod', 'targetKcal', 'targetProtein', 'targetCarbs',
+          'targetFat', 'targetFibre', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'userNumber', 'tier',
+          'paymentMethod', 'ecocashRef', 'targetKcal', 'targetProtein', 'targetCarbs',
+          'targetFat', 'targetFibre', 'currentStreak', 'longestStreak', 'lastCheckInDate',
+          'createdAt', 'updatedAt'
+        ])
+        && data.uid == userId
+        && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && data.userNumber is int && data.userNumber >= 1 && data.userNumber <= 10000000
+        && data.tier in ['alpha_free', 'pending_payment', 'premium_paid']
+        && data.paymentMethod in ['alpha', 'stripe', 'ecocash', 'none']
+        && (!('ecocashRef' in data) || (data.ecocashRef is string && data.ecocashRef.size() <= 80))
+        && data.targetKcal is number && data.targetKcal >= 800 && data.targetKcal <= 8000
+        && data.targetProtein is number && data.targetProtein >= 20 && data.targetProtein <= 600
+        && data.targetCarbs is number && data.targetCarbs >= 0 && data.targetCarbs <= 1200
+        && data.targetFat is number && data.targetFat >= 10 && data.targetFat <= 400
+        && data.targetFibre is number && data.targetFibre >= 0 && data.targetFibre <= 150
+        && (!('currentStreak' in data) || (data.currentStreak is int && data.currentStreak >= 0 && data.currentStreak <= 10000))
+        && (!('longestStreak' in data) || (data.longestStreak is int && data.longestStreak >= 0 && data.longestStreak <= 10000))
+        && (!('lastCheckInDate' in data) || (data.lastCheckInDate is string && data.lastCheckInDate.size() == 10 && data.lastCheckInDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFoodLog(data, userId) {
+      return data.keys().hasAll([
+          'userId', 'dateKey', 'mealGroup', 'foodId', 'foodName', 'unit',
+          'portionAmount', 'kcalPer100', 'proteinPer100', 'carbsPer100',
+          'fatPer100', 'fibrePer100', 'vitamins', 'source', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'dateKey', 'mealGroup', 'foodId', 'foodName', 'unit',
+          'portionAmount', 'kcalPer100', 'proteinPer100', 'carbsPer100',
+          'fatPer100', 'fibrePer100', 'vitamins', 'source', 'createdAt'
+        ])
+        && data.userId == userId
+        && data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.mealGroup in ['Breakfast', 'Lunch', 'Dinner', 'Snack']
+        && data.foodId is int && data.foodId >= 0 && data.foodId <= 100000
+        && data.foodName is string && data.foodName.size() >= 1 && data.foodName.size() <= 140
+        && data.unit in ['g', 'ml']
+        && data.portionAmount is number && data.portionAmount > 0 && data.portionAmount <= 10000
+        && data.kcalPer100 is number && data.kcalPer100 >= 0 && data.kcalPer100 <= 1200
+        && data.proteinPer100 is number && data.proteinPer100 >= 0 && data.proteinPer100 <= 120
+        && data.carbsPer100 is number && data.carbsPer100 >= 0 && data.carbsPer100 <= 120
+        && data.fatPer100 is number && data.fatPer100 >= 0 && data.fatPer100 <= 120
+        && data.fibrePer100 is number && data.fibrePer100 >= 0 && data.fibrePer100 <= 120
+        && data.vitamins is string && data.vitamins.size() <= 120
+        && data.source in ['camera', 'chat', 'barcode', 'manual', 'voice']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWeightLog(data, userId) {
+      return data.keys().hasAll(['userId', 'dateKey', 'weightKg', 'note', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'dateKey', 'weightKg', 'note', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.weightKg is number && data.weightKg >= 20 && data.weightKg <= 400
+        && data.note is string && data.note.size() <= 240
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCoachMessage(data, userId) {
+      return data.keys().hasAll(['userId', 'role', 'content', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'role', 'content', 'createdAt'])
+        && data.userId == userId
+        && data.role in ['user', 'assistant']
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 4000
+        && data.createdAt is timestamp;
+    }
+
+    function isValidDailyCheckIn(data, userId, checkinId) {
+      return data.keys().hasAll(['userId', 'dateKey', 'source', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'dateKey', 'source', 'createdAt'])
+        && data.userId == userId
+        && data.dateKey == checkinId
+        && data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.source in ['meal', 'manual']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidHydrationLog(data, userId, hydrationId) {
+      return data.keys().hasAll(['userId', 'dateKey', 'glasses', 'goalGlasses', 'glassMl', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'dateKey', 'glasses', 'goalGlasses', 'glassMl', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.dateKey == hydrationId
+        && data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.glasses is int && data.glasses >= 0 && data.glasses <= 40
+        && data.goalGlasses is int && data.goalGlasses >= 1 && data.goalGlasses <= 30
+        && data.glassMl is int && data.glassMl >= 50 && data.glassMl <= 1000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTimeHHMM(value) {
+      return value is string && value.size() == 5 && value.matches('^([01]\\d|2[0-3]):[0-5]\\d$');
+    }
+
+    function isValidMealReminderSettings(data, userId, settingId) {
+      return settingId == 'meal_reminders'
+        && data.keys().hasAll([
+          'userId', 'enabled', 'smartSkipLogged', 'breakfastTime',
+          'lunchTime', 'dinnerTime', 'snackTime', 'snackEnabled',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'enabled', 'smartSkipLogged', 'breakfastTime',
+          'lunchTime', 'dinnerTime', 'snackTime', 'snackEnabled',
+          'createdAt', 'updatedAt'
+        ])
+        && data.userId == userId
+        && data.enabled is bool
+        && data.smartSkipLogged is bool
+        && data.snackEnabled is bool
+        && isValidTimeHHMM(data.breakfastTime)
+        && isValidTimeHHMM(data.lunchTime)
+        && isValidTimeHHMM(data.dinnerTime)
+        && isValidTimeHHMM(data.snackTime)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Global Early-Bird Registration Counter
+    match /app_stats/{statId} {
+      allow get: if statId == 'global';
+      allow list: if false;
+      allow create: if isVerifiedUser()
+        && statId == 'global'
+        && isValidAppStats(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().totalRegisteredUsers == 0 && !exists(/databases/$(database)/documents/users/$(request.auth.uid)))
+          || (
+            incoming().totalRegisteredUsers == 1
+            && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+          )
+        );
+      allow update: if isVerifiedUser()
+        && statId == 'global'
+        && isValidAppStats(incoming())
+        && incoming().updatedAt == request.time
+        && incoming().alphaCap == existing().alphaCap
+        && incoming().totalRegisteredUsers == existing().totalRegisteredUsers + 1
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow delete: if false;
+    }
+
+    // User Profiles & Gatekeeper Tier Enforcement
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/app_stats/global)
+        && getAfter(/databases/$(database)/documents/app_stats/global).data.totalRegisteredUsers == incoming().userNumber
+        && (
+          (incoming().userNumber <= 10 && incoming().tier == 'alpha_free' && incoming().paymentMethod == 'alpha')
+          || (incoming().userNumber > 10 && incoming().tier == 'pending_payment' && incoming().paymentMethod == 'none')
+        );
+      allow update: if isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().userNumber == existing().userNumber
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isOwner(userId) && (
+              // Action 1: Update nutrition targets or display name
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'displayName', 'targetKcal', 'targetProtein', 'targetCarbs', 'targetFat', 'targetFibre', 'updatedAt'
+                ])
+              )
+              ||
+              // Action 2: Activate paid subscription via Stripe or EcoCash (for user #11+)
+              (
+                existing().tier == 'pending_payment'
+                && incoming().tier == 'premium_paid'
+                && incoming().paymentMethod in ['stripe', 'ecocash']
+                && incoming().diff(existing()).affectedKeys().hasOnly([
+                  'tier', 'paymentMethod', 'ecocashRef', 'updatedAt'
+                ])
+              )
+              ||
+              // Action 3: Sync meal check-in streak summary fields
+              (
+                incoming().tier == existing().tier
+                && incoming().paymentMethod == existing().paymentMethod
+                && incoming().diff(existing()).affectedKeys().hasOnly([
+                  'currentStreak', 'longestStreak', 'lastCheckInDate', 'updatedAt'
+                ])
+              )
+            )
+          )
+        );
+      allow delete: if isAdmin();
+
+      // User Food Logs (100g/100ml standardized entries)
+      match /food_logs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && resource.data.userId == request.auth.uid) || isAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(logId)
+          && isOwner(userId)
+          && isValidFoodLog(incoming(), userId)
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(logId)
+          && isOwner(userId)
+          && isValidFoodLog(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['portionAmount', 'mealGroup']);
+        allow delete: if isValidId(userId) && isValidId(logId) && (isOwner(userId) || isAdmin());
+      }
+
+      // User Weight Trend Logs
+      match /weight_logs/{weightId} {
+        allow get: if isValidId(userId) && isValidId(weightId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && resource.data.userId == request.auth.uid) || isAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(weightId)
+          && isOwner(userId)
+          && isValidWeightLog(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(weightId)
+          && isOwner(userId)
+          && isValidWeightLog(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().dateKey == existing().dateKey
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['weightKg', 'note', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(weightId) && (isOwner(userId) || isAdmin());
+      }
+
+      // Daily Check-Ins for Meal Logging Streaks
+      match /daily_checkins/{checkinId} {
+        allow get: if isValidId(userId) && isValidId(checkinId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && resource.data.userId == request.auth.uid) || isAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(checkinId)
+          && isOwner(userId)
+          && isValidDailyCheckIn(incoming(), userId, checkinId)
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(checkinId) && (isOwner(userId) || isAdmin());
+      }
+
+      // Daily Hydration Glass Logs
+      match /hydration_logs/{hydrationId} {
+        allow get: if isValidId(userId) && isValidId(hydrationId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && resource.data.userId == request.auth.uid) || isAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(hydrationId)
+          && isOwner(userId)
+          && isValidHydrationLog(incoming(), userId, hydrationId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(hydrationId)
+          && isOwner(userId)
+          && isValidHydrationLog(incoming(), userId, hydrationId)
+          && incoming().userId == existing().userId
+          && incoming().dateKey == existing().dateKey
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['glasses', 'goalGlasses', 'glassMl', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(hydrationId) && (isOwner(userId) || isAdmin());
+      }
+
+      // AI Coach Conversation History
+      match /coach_messages/{messageId} {
+        allow get: if isValidId(userId) && isValidId(messageId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && resource.data.userId == request.auth.uid) || isAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(messageId)
+          && isOwner(userId)
+          && isValidCoachMessage(incoming(), userId)
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(messageId) && (isOwner(userId) || isAdmin());
+      }
+
+      // Smart Meal Push Notification Reminder Settings
+      match /reminder_settings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && resource.data.userId == request.auth.uid) || isAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(settingId)
+          && isOwner(userId)
+          && isValidMealReminderSettings(incoming(), userId, settingId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(settingId)
+          && isOwner(userId)
+          && isValidMealReminderSettings(incoming(), userId, settingId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'enabled', 'smartSkipLogged', 'breakfastTime', 'lunchTime',
+            'dinnerTime', 'snackTime', 'snackEnabled', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(settingId) && (isOwner(userId) || isAdmin());
+      }
+    }
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && isOwner(adminId);
+      allow list, create, update, delete: if false;
+    }
+  }
+}
